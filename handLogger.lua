@@ -5,7 +5,7 @@
 --- MOD_DESCRIPTION: Logs the cards in your hand to the console whenever it changes
 --- VERSION: 1.0.0
 
-package.path = package.path .. ";mods/handLogger/?.lua"
+package.path = package.path .. ";mods/HandLogger/?.lua"
 
 -- Load all modules
 local config = require('config')
