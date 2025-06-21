@@ -37,4 +37,4 @@ local old_draw = love.draw
 function love.draw(...)
     if old_draw then old_draw(...) end
     ui.draw_all_ui()
-end 
+end
