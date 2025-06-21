@@ -15,6 +15,13 @@ local function get_blinds_skipped_count()
     return 0
 end
 
+local function get_rounds_played()
+    if G and G.GAME and G.GAME.completed_rounds then
+        return G.GAME.completed_rounds
+    end
+    return 0
+end
+
 local function get_rank_name(rank_index)
     -- card.base.value is 1 for Ace, 11 for Jack, 12 for Queen, 13 for King
     return config.rank_names[rank_index] or (tostring(rank_index))
@@ -131,6 +138,7 @@ end
 
 return {
     get_blinds_skipped_count = get_blinds_skipped_count,
+    get_rounds_played = get_rounds_played,
     get_rank_name = get_rank_name,
     get_suit_order = get_suit_order,
     get_rank_value = get_rank_value,

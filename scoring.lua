@@ -91,10 +91,8 @@ local function calculate_combo_score(combo_name, cards, sorted_jokers)
             card_chips = card_utils.get_card_base_chips(card)
             if card.edition and card.edition.holo then card_chips = card_chips + 10 end
             if card.edition and card.edition.foil then card_chips = card_chips + 5 end
-            if card.ability and type(card.ability) == "table" then
-                if card.ability.bonus and card.ability.bonus > 0 and not (card.ability.effect == "Stone Card") then
-                    card_chips = card_chips + 30
-                end
+            if card.ability and type(card.ability) == "table" and card.ability.bonus and card.ability.bonus > 0 then
+                card_chips = card_chips + card.ability.bonus
             end
             if card.config and card.config.center == G.P_CENTERS.m_mult then
                 total_mult = total_mult + 4
@@ -119,43 +117,47 @@ local function calculate_combo_score(combo_name, cards, sorted_jokers)
         end
     end
 
-    -- Split jokers into 'when scored' and 'other' jokers
-    local when_scored_jokers = {}
-    local other_jokers = {}
+    -- Apply joker effects in order
+    local photograph_used = false -- Photograph should only trigger once
     for _, joker in ipairs(sorted_jokers or {}) do
-        local name = joker.ability and joker.ability.name
-        if name == "Smiley Face" or name == "Photograph" then
-            table.insert(when_scored_jokers, joker)
-        else
-            table.insert(other_jokers, joker)
+        -- First, apply edition bonuses
+        if joker.edition then
+            if joker.edition.foil then
+                total_chips = total_chips + 50
+            end
+            if joker.edition.holo then
+                total_mult = total_mult + 10
+            end
+            if joker.edition.polychrome then
+                total_mult = total_mult * 1.5
+            end
         end
-    end
 
-    -- For face cards, apply 'when scored' jokers in order for each face card
-    local face_card_indices = {}
-    for idx, card in ipairs(cards) do
-        if card.base and (card.base.id == 11 or card.base.id == 12 or card.base.id == 13) then
-            table.insert(face_card_indices, idx)
-        end
-    end
-    local photograph_used = false
-    for i, idx in ipairs(face_card_indices) do
-        for _, joker in ipairs(when_scored_jokers) do
-            if joker.ability and joker.ability.name == "Smiley Face" then
-                total_mult = total_mult + 5
-            elseif joker.ability and joker.ability.name == "Photograph" and not photograph_used then
+        -- Then, apply the joker's main ability
+        local name = joker.ability and joker.ability.name
+
+        if name == "Smiley Face" then
+            local face_count = 0
+            for _, card in ipairs(cards) do
+                if card.base and (card.base.id == 11 or card.base.id == 12 or card.base.id == 13) then
+                    face_count = face_count + 1
+                end
+            end
+            total_mult = total_mult + (5 * face_count)
+        elseif name == "Photograph" then
+            local has_face_card = false
+            for _, card in ipairs(cards) do
+                if card.base and (card.base.id == 11 or card.base.id == 12 or card.base.id == 13) then
+                    has_face_card = true
+                    break
+                end
+            end
+            if has_face_card and not photograph_used then
                 total_mult = total_mult * 2
                 photograph_used = true
             end
-        end
-    end
-
-    -- Then apply all other jokers in order
-    for _, joker in ipairs(other_jokers) do
-        local name = joker.ability and joker.ability.name
-        
         -- Half Joker: +20 mult if hand has 3 or fewer cards
-        if name == "Half Joker" then
+        elseif name == "Half Joker" then
             if #cards <= 3 then
                 total_mult = total_mult + 20
             end
@@ -308,17 +310,36 @@ local function calculate_combo_score(combo_name, cards, sorted_jokers)
             total_mult = total_mult + (2 * #cards)
         -- Raised Fist: Adds double the rank of lowest card held in hand to Mult
         elseif name == "Raised Fist" then
-            local lowest_rank = 14 -- Start with Ace (highest)
-            for _, card in ipairs(cards) do
-                if card.base and card.base.id then
-                    local rank = card.base.id
-                    if rank < lowest_rank then
-                        lowest_rank = rank
+            local remaining_cards = {}
+            if G and G.hand and G.hand.cards then
+                for _, hand_card in ipairs(G.hand.cards) do
+                    local is_played = false
+                    for _, played_card in ipairs(cards) do
+                        if hand_card == played_card then
+                            is_played = true
+                            break
+                        end
+                    end
+                    if not is_played then
+                        table.insert(remaining_cards, hand_card)
                     end
                 end
             end
-            if lowest_rank < 14 then -- If we found a card
-                total_mult = total_mult + (2 * lowest_rank)
+
+            if #remaining_cards > 0 then
+                local lowest_rank = 14 -- Start with something higher than any rank
+                for _, card in ipairs(remaining_cards) do
+                    if card.base and card.base.value then
+                        local rank = utils.get_rank_value(card.base.value)
+                        if rank < lowest_rank then
+                            lowest_rank = rank
+                        end
+                    end
+                end
+                
+                if lowest_rank <= 14 then -- If we found a card
+                    total_mult = total_mult + (2 * lowest_rank)
+                end
             end
         -- Fibonacci: +1 mult per card in hand (Fibonacci sequence)
         elseif name == "Fibonacci" then
@@ -476,6 +497,23 @@ local function calculate_combo_score(combo_name, cards, sorted_jokers)
                 end
             end
             total_mult = total_mult + (13 * queen_count)
+        -- Popcorn: +20 Mult, -4 Mult per round played
+        elseif name == "Popcorn" then
+            local popcorn_mult = joker.ability and joker.ability.mult
+            total_mult = total_mult + math.max(0, popcorn_mult)
+        -- Green Joker: +1 mult per hand played, -1 per discard
+        elseif name == "Green Joker" then
+            local green_mult = (joker.ability and joker.ability.mult) or 0
+            total_mult = total_mult + green_mult + 1
+        -- Walkie Talkie: +10 chips and +4 mult for each 10 or 4 played
+        elseif name == "Walkie Talkie" then
+            for _, card in ipairs(cards) do
+                local rank = utils.get_rank_value(card.base.value)
+                if rank == 10 or rank == 4 then
+                    total_chips = total_chips + 10
+                    total_mult = total_mult + 4
+                end
+            end
         end
     end
 
