@@ -262,6 +262,13 @@ local function calculate_combo_score(combo_name, cards, sorted_jokers, all_playe
             if combo_name == "Straight" or combo_name == "Straight Flush" or combo_name == "Royal Flush" then
                 total_chips = total_chips + 100
             end
+        -- Runner: +15 chips if hand contains a Straight
+        elseif name == "Runner" then
+            local runner_chips = (joker.ability and joker.ability.extra and joker.ability.extra.chips) or 0
+            if combo_name == "Straight" or combo_name == "Straight Flush" or combo_name == "Royal Flush" then
+                runner_chips = runner_chips + 15
+            end
+            total_chips = total_chips + runner_chips
         -- Crafty Joker: +80 chips if hand contains a Flush
         elseif name == "Crafty Joker" then
             if combo_name == "Flush" or combo_name == "Straight Flush" or combo_name == "Royal Flush" then
@@ -381,13 +388,10 @@ local function calculate_combo_score(combo_name, cards, sorted_jokers, all_playe
                 end
             end
             total_mult = total_mult + (2 * steel_count)
-        -- Campfire: +2 mult per joker
+        -- Campfire: adds 0.25 mult for each card sold adn reset after boss blind
         elseif name == "Campfire" then
-            local joker_count = 0
-            if G and G.jokers and G.jokers.cards then
-                joker_count = #G.jokers.cards
-            end
-            total_mult = total_mult + (2 * joker_count)
+            local campfire_mult = (joker.ability and joker.ability.x_mult) or 1.0
+            total_mult = total_mult * campfire_mult
         -- Mr. Bones: +4 mult if hand has exactly 5 cards
         elseif name == "Mr. Bones" then
             if #cards == 5 then
