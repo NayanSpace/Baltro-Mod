@@ -297,11 +297,11 @@ local function calculate_combo_score(combo_name, cards, sorted_jokers, all_playe
             -- The game engine determines the suit and updates the joker's chip value on discard.
             local castle_chips = (joker.ability and joker.ability.extra and joker.ability.extra.chips) or 0
             total_chips = total_chips + castle_chips
-        -- Mystic Summit: +8 mult if 1 discard remaining
+        -- Mystic Summit: +15 mult if 0 discards remaining
         elseif name == "Mystic Summit" then
             local discards_left = (G and G.GAME and G.GAME.current_round and G.GAME.current_round.discards_left) or 0
-            if discards_left == 1 then
-                total_mult = total_mult + 8
+            if discards_left == 0 then
+                total_mult = total_mult + 15
             end
         -- Loyalty Card: x4 Mult every 6 hands
         elseif name == "Loyalty Card" then
@@ -319,10 +319,8 @@ local function calculate_combo_score(combo_name, cards, sorted_jokers, all_playe
                     total_mult = total_mult * extra.Xmult
                 end
             end
-        -- Misprint: Random mult between 1-4
+        -- Misprint: Random mult between 0-23
         elseif name == "Misprint" then
-            local random_mult = math.random(1, 4)
-            total_mult = total_mult + random_mult
         -- Dusk: +2 mult per card in hand
         elseif name == "Dusk" then
             total_mult = total_mult + (2 * #cards)
@@ -392,12 +390,6 @@ local function calculate_combo_score(combo_name, cards, sorted_jokers, all_playe
         elseif name == "Mr. Bones" then
             if #cards == 5 then
                 total_mult = total_mult + 4
-            end
-        -- Acrobat: +8 mult if no hands remaining
-        elseif name == "Acrobat" then
-            local hands_left = (G and G.GAME and G.GAME.current_round and G.GAME.current_round.hands_left) or 0
-            if hands_left == 0 then
-                total_mult = total_mult + 8
             end
         -- Sock and Buskin: +6 mult if hand has exactly 5 cards
         elseif name == "Sock and Buskin" then
@@ -566,6 +558,65 @@ local function calculate_combo_score(combo_name, cards, sorted_jokers, all_playe
             total_mult = total_mult * ramen_mult
             
             -- Note: Self-destruct logic is handled by the game engine, not needed for scoring.
+        -- Constellation: X-mult that increases per Planet card used
+        elseif name == "Constellation" then
+            -- The game engine updates joker.ability.x_mult. We just read it.
+            local constellation_mult = (joker.ability and joker.ability.x_mult) or 1.0
+            total_mult = total_mult * constellation_mult
+        -- Bull: +2 chips per dollar (does nothing if $0 or less)
+        elseif name == "Bull" then
+            local current_dollars = (G and G.GAME and (G.GAME.dollars + (G.GAME.dollar_buffer or 0))) or 0
+            if current_dollars > 0 then
+                local bull_chips = (joker.ability and joker.ability.extra or 2) * current_dollars
+                total_chips = total_chips + bull_chips
+            end
+        -- Red Card: +3 mult per Booster Pack skipped
+        elseif name == "Red Card" then
+            local red_card_mult = (joker.ability and joker.ability.mult) or 0
+            total_mult = total_mult + red_card_mult
+        -- Cavendish: X3 mult to all hands played
+        elseif name == "Cavendish" then
+            total_mult = total_mult * 3
+        -- Ride the Bus: +1 mult per hand without face cards (increases BEFORE scoring, resets when face card played)
+        elseif name == "Ride the Bus" then
+            local current_mult = (joker.ability and joker.ability.mult) or 0
+            local has_face_cards = false
+            
+            -- Check if current hand contains face cards
+            for _, card in ipairs(cards) do
+                if card.base and (card.base.id == 11 or card.base.id == 12 or card.base.id == 13) then
+                    has_face_cards = true
+                    break
+                end
+            end
+            
+            if has_face_cards then
+                -- Reset mult to 0 if face cards are present
+                total_mult = total_mult + 0
+            else
+                -- Add +1 to current mult if no face cards
+                total_mult = total_mult + (current_mult + 1)
+            end
+        -- Acrobat: X3 mult on the final hand of a round
+        elseif name == "Acrobat" then
+            local hands_left = (G and G.GAME and G.GAME.current_round and G.GAME.current_round.hands_left) or 0
+            if hands_left == 1 then
+                total_mult = total_mult * 3
+            end
+        -- Baseball Card: X1.5 mult for each Uncommon Joker held (stacks multiplicatively)
+        elseif name == "Baseball Card" then
+            local uncommon_count = 0
+            if G and G.jokers and G.jokers.cards then
+                for _, other_joker in ipairs(G.jokers.cards) do
+                    local rarity = (other_joker.ability and other_joker.ability.rarity) or 
+                                  (other_joker.config and other_joker.config.center and other_joker.config.center.rarity) or 0
+                    if rarity == 2 and other_joker ~= joker then
+                        uncommon_count = uncommon_count + 1
+                    end
+                end
+            end
+            local baseball_mult = 1.5 ^ uncommon_count
+            total_mult = total_mult * baseball_mult
         -- Blue Joker: +2 chips for every card remaining in deck
         elseif name == "Blue Joker" then
             local deck_size = 0
@@ -629,6 +680,10 @@ local function calculate_combo_score(combo_name, cards, sorted_jokers, all_playe
                     total_mult = total_mult + 4
                 end
             end
+        -- Fortune Teller: +1 mult per Tarot card used (retroactive)
+        elseif name == "Fortune Teller" then
+            local tarot_mult = (G and G.GAME and G.GAME.consumeable_usage_total and G.GAME.consumeable_usage_total.tarot) or 0
+            total_mult = total_mult + tarot_mult
         end
     end
 
@@ -660,6 +715,16 @@ local function get_possible_combos_with_scores(cards)
         end
     end
     
+    local has_shortcut_joker = false
+    if G and G.jokers and G.jokers.cards then
+        for _, joker in ipairs(G.jokers.cards) do
+            if joker.ability and joker.ability.name == "Shortcut" then
+                has_shortcut_joker = true
+                break
+            end
+        end
+    end
+
     local function generate_combinations(cards, start, current, result)
         if #current == 5 then
             table.insert(result, current)
@@ -678,7 +743,13 @@ local function get_possible_combos_with_scores(cards)
     generate_combinations(non_stone_cards, 1, {}, five_card_combinations)
     for _, combo in ipairs(five_card_combinations) do
         for _, hand in ipairs(poker_hands.poker_hands) do
-            if hand.check(combo) then
+            local is_match = false
+            if hand.name == "Straight" and has_shortcut_joker then
+                is_match = poker_hands.check_shortcut_straight(combo)
+            else
+                is_match = hand.check(combo)
+            end
+            if is_match then
                 local relevant, for_scoring = filter_relevant_combo_cards(hand.name, combo)
                 -- Create a unique key based on hand name, sorted relevant card values and suits, and score
                 local card_keys = {}

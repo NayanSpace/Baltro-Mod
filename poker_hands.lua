@@ -139,6 +139,47 @@ local function check_pair(cards)
     return false
 end
 
+-- Shortcut Straight: allows straights with one or more gaps of 1 rank between cards (no Ace wrapping)
+local function check_shortcut_straight(cards)
+    if #cards < 5 then return false end
+    local unique_values = {}
+    for _, card in ipairs(cards) do
+        unique_values[utils.get_rank_value(card.base.value)] = true
+    end
+    local values = {}
+    for val, _ in pairs(unique_values) do
+        table.insert(values, val)
+    end
+    table.sort(values, function(a, b) return a > b end)
+    -- Ace-high shortcut straight (14, 13, 12, 11, 10)
+    local ace_high = {14, 13, 12, 11, 10}
+    local found_ace_high = true
+    for _, v in ipairs(ace_high) do
+        if not unique_values[v] then found_ace_high = false break end
+    end
+    if found_ace_high then return true end
+    -- Ace-low shortcut straight (14, 5, 4, 3, 2)
+    local ace_low = {14, 5, 4, 3, 2}
+    local found_ace_low = true
+    for _, v in ipairs(ace_low) do
+        if not unique_values[v] then found_ace_low = false break end
+    end
+    if found_ace_low then return true end
+    -- General shortcut straight: allow gaps of 1 between consecutive values
+    for i = 1, #values - 4 do
+        local is_shortcut = true
+        for j = 0, 3 do
+            local diff = values[i + j] - values[i + j + 1]
+            if diff ~= 1 and diff ~= 2 then
+                is_shortcut = false
+                break
+            end
+        end
+        if is_shortcut then return true end
+    end
+    return false
+end
+
 -- Poker hand combinations
 local poker_hands = {
     {name = "Royal Flush", check = check_royal_flush},
@@ -162,5 +203,6 @@ return {
     check_full_house = check_full_house,
     check_three_of_a_kind = check_three_of_a_kind,
     check_two_pair = check_two_pair,
-    check_pair = check_pair
+    check_pair = check_pair,
+    check_shortcut_straight = check_shortcut_straight
 } 
